@@ -11,34 +11,52 @@ DOCS_PATH = "./docs"
 CHROMA_PATH = "./chroma_db"
 EMBED_MODEL = "all-MiniLM-L6-v2"   # small, fast, runs locally for free
 
-# ── Step 1: Load all markdown files from /docs ───────────────────
-print("📂 Loading documents...")
-loader = DirectoryLoader(
-    DOCS_PATH,
-    glob="**/*.md",
-    loader_cls=UnstructuredMarkdownLoader
-)
-documents = loader.load()
-print(f"   Loaded {len(documents)} documents")
+# # ── Step 1: Load all markdown files from /docs ───────────────────
+# print("📂 Loading documents...")
+# loader = DirectoryLoader(
+#     DOCS_PATH,
+#     glob="**/*.md",
+#     loader_cls=UnstructuredMarkdownLoader
+# )
+# documents = loader.load()
+# print(f"   Loaded {len(documents)} documents")
 
-# ── Step 2: Split into chunks ────────────────────────────────────
-print("✂️  Splitting into chunks...")
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,        # max characters per chunk
-    chunk_overlap=50,      # overlap so context isn't lost at boundaries
-    separators=["\n## ", "\n### ", "\n", " "]  # split at headings first
-)
-chunks = splitter.split_documents(documents)
-print(f"   Created {len(chunks)} chunks")
+# # ── Step 2: Split into chunks ────────────────────────────────────
+# print("✂️  Splitting into chunks...")
+# splitter = RecursiveCharacterTextSplitter(
+#     chunk_size=500,        # max characters per chunk
+#     chunk_overlap=50,      # overlap so context isn't lost at boundaries
+#     separators=["\n## ", "\n### ", "\n", " "]  # split at headings first
+# )
+# chunks = splitter.split_documents(documents)
+# print(f"   Created {len(chunks)} chunks")
 
-# ── Step 3 & 4: Embed and store in ChromaDB ─────────────────────
-print("🧠 Embedding and storing in ChromaDB...")
-embeddings = SentenceTransformerEmbeddings(model_name=EMBED_MODEL)
+# # ── Step 3 & 4: Embed and store in ChromaDB ─────────────────────
+# print("🧠 Embedding and storing in ChromaDB...")
+# embeddings = SentenceTransformerEmbeddings(model_name=EMBED_MODEL)
 
-db = Chroma.from_documents(
-    documents=chunks,
-    embedding=embeddings,
-    persist_directory=CHROMA_PATH
-)
+# db = Chroma.from_documents(
+#     documents=chunks,
+#     embedding=embeddings,
+#     persist_directory=CHROMA_PATH
+# )
 
-print(f"✅ Done! {len(chunks)} chunks stored in '{CHROMA_PATH}'")
+# print(f"✅ Done! {len(chunks)} chunks stored in '{CHROMA_PATH}'")
+
+
+def run_ingest():
+    print("📂 Loading documents...")
+    loader = DirectoryLoader(DOCS_PATH, glob="**/*.md",
+                             loader_cls=UnstructuredMarkdownLoader)
+    documents = loader.load()
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500, chunk_overlap=50, separators=["\n## ", "\n### ", "\n", " "])
+    chunks = splitter.split_documents(documents)
+    embeddings = SentenceTransformerEmbeddings(model_name=EMBED_MODEL)
+    db = Chroma.from_documents(
+        documents=chunks, embedding=embeddings, persist_directory=CHROMA_PATH)
+    print(f"✅ Done! {len(chunks)} chunks stored.")
+
+
+if __name__ == "__main__":
+    run_ingest()

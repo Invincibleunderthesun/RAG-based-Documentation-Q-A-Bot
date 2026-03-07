@@ -1,6 +1,14 @@
 # app.py
+import os
+
 import streamlit as st
 from rag import ask
+from ingest import run_ingest
+
+# Auto-ingest if chroma_db doesn't exist (needed for cloud deployment)
+if not os.path.exists("./chroma_db"):
+    with st.spinner("⚙️ Setting up knowledge base for first time..."):
+        run_ingest()
 
 # ── Page config ─────────────────────────────────────────────────
 st.set_page_config(
