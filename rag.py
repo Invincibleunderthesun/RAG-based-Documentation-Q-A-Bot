@@ -10,13 +10,17 @@ from langchain_chroma import Chroma
 
 from dotenv import load_dotenv
 from groq import Groq
+import streamlit as st
 
 # ── Config ──────────────────────────────────────────────────────
 CHROMA_PATH = "./chroma_db"
 EMBED_MODEL = "all-MiniLM-L6-v2"
 TOP_K = 4   # how many chunks to retrieve per question
 load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+
+api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+client = Groq(api_key=api_key)
 # ── Load ChromaDB (runs once when app starts) ────────────────────
 embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
