@@ -1,23 +1,34 @@
 # rag.py
-# Takes a user question → finds relevant chunks → asks Claude → returns answer
-
 import os
-from urllib import response
-
-from click import prompt
+import streamlit as st
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-
-from dotenv import load_dotenv
 from groq import Groq
-import streamlit as st
-
-# ── Config ──────────────────────────────────────────────────────
-CHROMA_PATH = "./chroma_db"
-EMBED_MODEL = "all-MiniLM-L6-v2"
-TOP_K = 4   # how many chunks to retrieve per question
+from dotenv import load_dotenv
 load_dotenv()
 
+# ── Config ───────────────────────────────────────────────────────
+CHROMA_PATH = "./chroma_db"
+EMBED_MODEL = "all-MiniLM-L6-v2"
+TOP_K = 4
+
+# ── Load ChromaDB & Groq client (once on startup) ────────────────
+embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+
+
+def get_db():
+    try:
+        collection = st.session_state.get("collection_name", "helios_docs")
+    except Exception:
+        collection = "helios_docs"
+    return Chroma(
+        persist_directory=CHROMA_PATH,
+        embedding_function=embeddings,
+        collection_name=collection
+    )
+
+
+db = get_db()
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -25,73 +36,83 @@ except Exception:
     api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    st.error("❗ GROQ_API_KEY not found in secrets or environment!")
+    st.error("❗ GROQ_API_KEY not found!")
     st.stop()
 
 client = Groq(api_key=api_key)
 
-# ── Load ChromaDB (runs once when app starts) ────────────────────
-embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
-db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-
-# ── Core RAG function ────────────────────────────────────────────
+# ── Core RAG function with conversation memory ───────────────────
 
 
-def ask(question: str) -> dict:
-    # 1. Search ChromaDB for most relevant chunks
-    results = db.similarity_search(question, k=TOP_K)
+def ask(question: str, chat_history: list = [], filter_source: str = None) -> dict:
 
-    # 2. Build context from retrieved chunks
+    # 1. Build smarter search query using last assistant answer as context
+    if chat_history and len(chat_history) >= 2:
+        # Get last assistant response to give retrieval better context
+        last_assistant = next(
+            (m["content"]
+             for m in reversed(chat_history) if m["role"] == "assistant"),
+            ""
+        )
+        # Combine last answer + current question for richer retrieval
+        search_query = f"{last_assistant[:300]} {question}"
+    else:
+        search_query = question
+
+    # 2. Search ChromaDB — with optional source filter
+    if filter_source and filter_source != "All Services":
+        results = db.similarity_search(
+            search_query,
+            k=TOP_K,
+            filter={"source": filter_source}
+        )
+    else:
+        results = db.similarity_search(search_query, k=TOP_K)
+
+    # 3. Build context from chunks
     context = "\n\n---\n\n".join([doc.page_content for doc in results])
 
-    # 3. Build prompt
-    prompt = f"""You are a helpful assistant for NexaCommerce API documentation.
-Answer the user's question using ONLY the context provided below.
+    # 4. Build messages array with full chat history for memory
+    system_prompt = """You are a helpful assistant for documents present.
+Answer questions using ONLY the context provided below.
 If the answer is not in the context, say "I couldn't find that in the documentation."
-Always be concise and specific.
+Be concise, specific, and refer to previous messages in the conversation if relevant.
 
 CONTEXT:
-{context}
+""" + context
 
-QUESTION:
-{question}
-"""
+    # Convert chat history to Groq message format
+    messages = [{"role": "system", "content": system_prompt}]
+    for msg in chat_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": question})
 
-    # 4. Call Claude API
-    # Replace the client.messages.create block with:
+    # 5. Call Groq with full conversation
     response = client.chat.completions.create(
-        model="openai/gpt-oss-120b",   # free, fast model
-        messages=[{"role": "user", "content": prompt}],
-        temperature=1,
-        max_completion_tokens=8192,
-        top_p=1,
-        reasoning_effort="medium",
-        stream=False,
-        stop=None
+        model="openai/gpt-oss-120b",
+        messages=messages,
+        max_tokens=8192,
+        stream=False
     )
 
     answer = response.choices[0].message.content
 
-    # 5. Return answer + the sources used
+    # 6. Return answer + sources + raw chunks (for explainability)
     sources = list(set([
-        doc.metadata.get("source", "unknown").split("\\")[-1]
+        doc.metadata.get("source", "unknown")
         for doc in results
     ]))
 
-    return {"answer": answer, "sources": sources}
-
-
-# ── Quick test (only runs when you execute this file directly) ───
-if __name__ == "__main__":
-    test_questions = [
-        "What error code do I get if I try to login with wrong credentials?",
-        "Can I cancel an order that has already been shipped?",
-        "How often are recommendation models retrained?",
+    chunks = [
+        {
+            "content": doc.page_content,
+            "source": doc.metadata.get("source", "unknown")
+        }
+        for doc in results
     ]
 
-    for q in test_questions:
-        print(f"\n❓ {q}")
-        result = ask(q)
-        print(f"💬 {result['answer']}")
-        print(f"📄 Sources: {result['sources']}")
-        print("-" * 60)
+    return {
+        "answer": answer,
+        "sources": sources,
+        "chunks": chunks  # we'll use this in Feature 2
+    }

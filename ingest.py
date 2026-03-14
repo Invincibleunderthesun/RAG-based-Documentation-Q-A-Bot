@@ -1,4 +1,4 @@
-# Replace the imports at the top of ingest.py with:
+# ingest.py
 import os
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -7,12 +7,13 @@ from langchain_chroma import Chroma
 from dotenv import load_dotenv
 load_dotenv()
 
+# ── Config ──────────────────────────────────────────────────────
 DOCS_PATH = "./docs"
 CHROMA_PATH = "./chroma_db"
 EMBED_MODEL = "all-MiniLM-L6-v2"
 
 
-def run_ingest():
+def run_ingest(collection_name="helios_docs"):
     print("📂 Loading documents...")
     documents = []
     for filename in os.listdir(DOCS_PATH):
@@ -20,7 +21,6 @@ def run_ingest():
             filepath = os.path.join(DOCS_PATH, filename)
             loader = TextLoader(filepath, encoding="utf-8")
             docs = loader.load()
-            # Tag each doc with its filename as metadata
             for doc in docs:
                 doc.metadata["source"] = filename
             documents.extend(docs)
@@ -39,9 +39,12 @@ def run_ingest():
     db = Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
-        persist_directory=CHROMA_PATH
+        persist_directory=CHROMA_PATH,
+        collection_name=collection_name
     )
-    print(f"✅ Done! {len(chunks)} chunks stored.")
+    print(
+        f"✅ Done! {len(chunks)} chunks stored in collection '{collection_name}'")
+    return collection_name
 
 
 if __name__ == "__main__":
