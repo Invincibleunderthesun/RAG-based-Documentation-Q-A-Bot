@@ -19,8 +19,17 @@ TOP_K = 4   # how many chunks to retrieve per question
 load_dotenv()
 
 
-api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+try:
+    api_key = st.secrets["GROQ_API_KEY"]
+except Exception:
+    api_key = os.getenv("GROQ_API_KEY")
+
+if not api_key:
+    st.error("❗ GROQ_API_KEY not found in secrets or environment!")
+    st.stop()
+
 client = Groq(api_key=api_key)
+
 # ── Load ChromaDB (runs once when app starts) ────────────────────
 embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
